@@ -1,0 +1,323 @@
+-- JOSUKE HIGASHIKATA (CRAZY DIAMOND) // REAL DAMAGE + KNOCKBACK (NO PLAYER ANIMATION)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+local Lighting = game:GetService("Lighting")
+local CoreGui = game:GetService("CoreGui")
+
+local renderConnection
+local diedConnection
+
+local function initStandSystem(Character)
+    if renderConnection then renderConnection:Disconnect() end
+    if diedConnection then diedConnection:Disconnect() end
+    if workspace:FindFirstChild("MyBlockStand") then workspace.MyBlockStand:Destroy() end
+    if CoreGui:FindFirstChild("StandUI") then CoreGui.StandUI:Destroy() end
+
+    local RootPart = Character:WaitForChild("HumanoidRootPart")
+    local Humanoid = Character:WaitForChild("Humanoid")
+    local HeadPlayer = Character:WaitForChild("Head")
+
+    ---------------------------------------------------------
+    -- STEP 1: ทรงผมปอมปาดัวร์ Josuke (Pompadour Hair)
+    ---------------------------------------------------------
+    local HairModel = Instance.new("Model")
+    HairModel.Name = "JosukeHair"
+    HairModel.Parent = HeadPlayer
+
+    local function createHairPart(size, c0, color)
+        local p = Instance.new("Part")
+        p.Size = size
+        p.Color = color or Color3.fromRGB(15, 15, 15)
+        p.Material = Enum.Material.SmoothPlastic
+        p.CanCollide = false
+        p.Parent = HairModel
+        
+        local w = Instance.new("Weld")
+        w.Part0 = HeadPlayer
+        w.Part1 = p
+        w.C0 = c0
+        w.Parent = HeadPlayer
+        return p
+    end
+
+    -- ฐานผมด้านข้างและด้านหลัง
+    createHairPart(Vector3.new(1.1, 0.9, 1.1), CFrame.new(0, 0.1, 0))
+    -- ปอมปาดัวร์ด้านบนที่ตั้งขึ้นอันเป็นเอกลักษณ์
+    createHairPart(Vector3.new(0.8, 1.2, 0.9), CFrame.new(0, 0.75, -0.1) * CFrame.Angles(math.rad(-15), 0, 0))
+    -- ปอยผมด้านหน้าที่ยื่นลงมา
+    createHairPart(Vector3.new(0.3, 0.6, 0.4), CFrame.new(0, 0.4, -0.55) * CFrame.Angles(math.rad(25), 0, 0))
+
+    ---------------------------------------------------------
+    -- STEP 2: โมเดล Stand R6 (Crazy Diamond)
+    ---------------------------------------------------------
+    local Stand = Instance.new("Model")
+    Stand.Name = "MyBlockStand"
+    Stand.Parent = workspace
+
+    local pink = Color3.fromRGB(240, 120, 180)
+    local cyan = Color3.fromRGB(80, 220, 200)
+    local yellowAcc = Color3.fromRGB(255, 220, 50)
+
+    local function createBlock(name, size, color, mat)
+        local p = Instance.new("Part")
+        p.Name = name
+        p.Size = size
+        p.Color = color
+        p.Material = mat or Enum.Material.Neon
+        p.CanCollide = false
+        p.Anchored = true
+        p.Parent = Stand
+        return p
+    end
+
+    local Head = createBlock("Head", Vector3.new(1.2, 1.2, 1.2), cyan)
+    local Eyes = createBlock("Eyes", Vector3.new(0.8, 0.2, 0.1), Color3.fromRGB(255, 255, 255))
+    local HeadGem = createBlock("HeadGem", Vector3.new(0.3, 0.3, 0.15), yellowAcc)
+    local Torso = createBlock("Torso", Vector3.new(2, 2, 1), pink)
+    local Belt = createBlock("Belt", Vector3.new(2.1, 0.3, 1.1), yellowAcc)
+    local LeftArm = createBlock("LeftArm", Vector3.new(1, 2, 1), pink)
+    local RightArm = createBlock("RightArm", Vector3.new(1, 2, 1), pink)
+    local LShoulder = createBlock("LShoulder", Vector3.new(1.2, 0.5, 1.2), cyan)
+    local RShoulder = createBlock("RShoulder", Vector3.new(1.2, 0.5, 1.2), cyan)
+    local LeftLeg = createBlock("LeftLeg", Vector3.new(1, 2, 1), pink)
+    local RightLeg = createBlock("RightLeg", Vector3.new(1, 2, 1), pink)
+
+    Stand.PrimaryPart = Torso
+
+    ---------------------------------------------------------
+    -- STEP 3: ระบบทำดาเมจ และ ผลักศัตรูกระเด็น (Damage & Knockback)
+    ---------------------------------------------------------
+    local function dealDamage(position, range, damage, knockbackPower)
+        for _, enemy in pairs(workspace:GetChildren()) do
+            if enemy:IsA("Model") and enemy ~= Character and enemy:FindFirstChild("Humanoid") and enemy:FindFirstChild("HumanoidRootPart") then
+                local enemyRoot = enemy.HumanoidRootPart
+                local enemyHum = enemy.Humanoid
+                local dist = (enemyRoot.Position - position).Magnitude
+                
+                if dist <= range then
+                    enemyHum:TakeDamage(damage)
+                    if knockbackPower and knockbackPower > 0 then
+                        local knockVector = (enemyRoot.Position - RootPart.Position).Unit * knockbackPower + Vector3.new(0, knockbackPower * 0.5, 0)
+                        local velocity = Instance.new("BodyVelocity")
+                        velocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+                        velocity.Velocity = knockVector
+                        velocity.Parent = enemyRoot
+                        Debris:AddItem(velocity, 0.2)
+                    end
+                end
+            end
+        end
+    end
+
+    ---------------------------------------------------------
+    -- STEP 4: อัปเดตตำแหน่งเฉพาะ Stand เท่านั้น
+    ---------------------------------------------------------
+    local defaultOffset = CFrame.new(-2.2, 1.8, 2)
+    local currentOffset = defaultOffset
+
+    local torsoAngle = CFrame.Angles(0, 0, 0)
+    local lArmAngle = CFrame.new(-1.5, 0, 0)
+    local rArmAngle = CFrame.new(1.5, 0, 0)
+
+    local isAttacking = false
+
+    renderConnection = RunService.RenderStepped:Connect(function()
+        local t = tick()
+        if RootPart and Torso and Torso.Parent then
+            local hover = math.sin(t * 3) * 0.25
+            local torsoCF = RootPart.CFrame * currentOffset * CFrame.new(0, hover, 0) * torsoAngle
+            Torso.CFrame = torsoCF
+            
+            Head.CFrame = torsoCF * CFrame.new(0, 1.6, 0)
+            Eyes.CFrame = Head.CFrame * CFrame.new(0, 0.1, -0.65)
+            HeadGem.CFrame = Head.CFrame * CFrame.new(0, 0.4, -0.62)
+            Belt.CFrame = torsoCF * CFrame.new(0, -0.9, 0)
+            
+            LeftArm.CFrame = torsoCF * lArmAngle
+            RightArm.CFrame = torsoCF * rArmAngle
+            LShoulder.CFrame = LeftArm.CFrame * CFrame.new(0, 0.8, 0)
+            RShoulder.CFrame = RightArm.CFrame * CFrame.new(0, 0.8, 0)
+            
+            LeftLeg.CFrame = torsoCF * CFrame.new(-0.5, -2, 0) * CFrame.Angles(math.sin(t*3)*0.1, 0, 0)
+            RightLeg.CFrame = torsoCF * CFrame.new(0.5, -2, 0) * CFrame.Angles(-math.sin(t*3)*0.1, 0, 0)
+        end
+    end)
+
+    ---------------------------------------------------------
+    -- STEP 5: UI และสกิลเฉพาะของ Josuke / Crazy Diamond
+    ---------------------------------------------------------
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "StandUI"
+    ScreenGui.Parent = CoreGui
+
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0, 110, 0, 200)
+    Frame.Position = UDim2.new(0.02, 0, 0.12, 0)
+    Frame.BackgroundTransparency = 1
+    Frame.Parent = ScreenGui
+
+    local Layout = Instance.new("UIListLayout")
+    Layout.Parent = Frame
+    Layout.Padding = UDim.new(0, 5)
+
+    local function makeBtn(text, color, callback)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, 0, 0, 35)
+        btn.BackgroundColor3 = color
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.SourceSansBold
+        btn.TextSize = 10
+        btn.Parent = Frame
+        
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 5)
+        corner.Parent = btn
+        
+        btn.MouseButton1Click:Connect(callback)
+    end
+
+    -- [1. DORA BARRAGE (รัวหมัดโดร่า)]
+    makeBtn("👊 DORA BARRAGE", Color3.fromRGB(240, 100, 160), function()
+        if isAttacking then return end
+        isAttacking = true
+        currentOffset = CFrame.new(0, 0.5, -2.5)
+
+        task.spawn(function()
+            for i = 1, 28 do
+                local isRight = (i % 2 == 0)
+                torsoAngle = CFrame.Angles(0, math.rad(isRight and -20 or 20), 0)
+                if isRight then
+                    rArmAngle = CFrame.new(1.5, 0, -1.2) * CFrame.Angles(math.rad(90), 0, 0)
+                    lArmAngle = CFrame.new(-1.5, 0, 0)
+                else
+                    lArmAngle = CFrame.new(-1.5, 0, -1.2) * CFrame.Angles(math.rad(90), 0, 0)
+                    rArmAngle = CFrame.new(1.5, 0, 0)
+                end
+                
+                local hitPos = RootPart.CFrame * CFrame.new(0, 0, -3)
+                dealDamage(hitPos.Position, 6, 5, 6)
+                
+                local punchFx = createBlock("PunchFX", Vector3.new(1.2, 1.2, 1.8), isRight and cyan or pink)
+                punchFx.CFrame = RootPart.CFrame * CFrame.new(isRight and 1.5 or -1.5, 0.5, -2)
+                
+                TweenService:Create(punchFx, TweenInfo.new(0.12), {
+                    CFrame = punchFx.CFrame * CFrame.new(0, 0, -6),
+                    Transparency = 1
+                }):Play()
+                Debris:AddItem(punchFx, 0.12)
+                task.wait(0.035)
+            end
+            
+            torsoAngle = CFrame.Angles(0, 0, 0)
+            lArmAngle = CFrame.new(-1.5, 0, 0)
+            rArmAngle = CFrame.new(1.5, 0, 0)
+            currentOffset = defaultOffset
+            isAttacking = false
+        end)
+    end)
+
+    -- [2. HEAVY PUNCH (หมัดหนักซัดกระเด็น)]
+    makeBtn("💥 HEAVY PUNCH", Color3.fromRGB(220, 50, 50), function()
+        if isAttacking then return end
+        isAttacking = true
+        
+        currentOffset = CFrame.new(0, 1.2, 2)
+        torsoAngle = CFrame.Angles(math.rad(-15), 0, 0)
+        lArmAngle = CFrame.new(-2, 0.5, 0) * CFrame.Angles(0, 0, math.rad(-45))
+        rArmAngle = CFrame.new(2, 0.5, 0) * CFrame.Angles(0, 0, math.rad(45))
+        task.wait(0.3)
+        
+        currentOffset = CFrame.new(0, 0.2, -3.5)
+        torsoAngle = CFrame.Angles(math.rad(30), math.rad(-25), 0)
+        rArmAngle = CFrame.new(1.2, 0, -2) * CFrame.Angles(math.rad(90), 0, 0)
+        lArmAngle = CFrame.new(-1.5, 0, 1) * CFrame.Angles(math.rad(-30), 0, 0)
+        
+        local hitPos = RootPart.CFrame * CFrame.new(0, 0, -4)
+        dealDamage(hitPos.Position, 10, 40, 150)
+
+        local mega = createBlock("MegaFX", Vector3.new(3.5, 3.5, 4.5), cyan)
+        mega.CFrame = RootPart.CFrame * CFrame.new(0, 0.5, -3)
+        
+        TweenService:Create(mega, TweenInfo.new(0.25), {
+            CFrame = mega.CFrame * CFrame.new(0, 0, -12),
+            Size = Vector3.new(8, 8, 10),
+            Transparency = 1
+        }):Play()
+        Debris:AddItem(mega, 0.25)
+        task.wait(0.4)
+        
+        torsoAngle = CFrame.Angles(0, 0, 0)
+        lArmAngle = CFrame.new(-1.5, 0, 0)
+        rArmAngle = CFrame.new(1.5, 0, 0)
+        currentOffset = defaultOffset
+        isAttacking = false
+    end)
+
+    -- [3. FIX / HEAL (ทักษะซ่อมแซม/ฮีลเลือดตัวเอง)]
+    makeBtn("💖 FIX & HEAL", Color3.fromRGB(80, 220, 140), function()
+        if isAttacking then return end
+        isAttacking = true
+        
+        Humanoid.Health = math.min(Humanoid.MaxHealth, Humanoid.Health + 35)
+        
+        local healFx = createBlock("HealFX", Vector3.new(4, 4, 4), Color3.fromRGB(100, 255, 180))
+        healFx.Shape = Enum.PartType.Ball
+        healFx.CFrame = RootPart.CFrame
+        
+        TweenService:Create(healFx, TweenInfo.new(0.5), {
+            Size = Vector3.new(12, 12, 12),
+            Transparency = 1
+        }):Play()
+        Debris:AddItem(healFx, 0.5)
+        
+        task.wait(0.4)
+        isAttacking = false
+    end)
+
+    -- [4. WALL TRAP (สร้างกำแพงหินซัดศัตรู)]
+    makeBtn("🧱 WALL TRAP", Color3.fromRGB(180, 120, 60), function()
+        if isAttacking then return end
+        isAttacking = true
+        
+        currentOffset = CFrame.new(0, 0.5, -2)
+        rArmAngle = CFrame.new(1.5, 0, -1.5) * CFrame.Angles(math.rad(90), 0, 0)
+        
+        task.wait(0.15)
+        dealDamage(RootPart.Position + RootPart.CFrame.LookVector * 6, 8, 30, 80)
+        
+        local wall = createBlock("WallFX", Vector3.new(5, 6, 1.5), Color3.fromRGB(140, 140, 140), Enum.Material.Slate)
+        wall.Anchored = true
+        wall.CanCollide = true
+        wall.CFrame = RootPart.CFrame * CFrame.new(0, 0, -6)
+        
+        task.spawn(function()
+            task.wait(3)
+            TweenService:Create(wall, TweenInfo.new(0.5), { Transparency = 1, Size = Vector3.new(0,0,0) }):Play()
+            Debris:AddItem(wall, 0.5)
+        end)
+        
+        task.wait(0.3)
+        rArmAngle = CFrame.new(1.5, 0, 0)
+        currentOffset = defaultOffset
+        isAttacking = false
+    end)
+
+    diedConnection = Humanoid.Died:Connect(function()
+        if renderConnection then renderConnection:Disconnect() end
+        if Stand then Stand:Destroy() end
+        if ScreenGui then ScreenGui:Destroy() end
+    end)
+end
+
+if LocalPlayer.Character then
+    task.spawn(function() initStandSystem(LocalPlayer.Character) end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+    task.wait(0.5)
+    initStandSystem(newCharacter)
+end)
